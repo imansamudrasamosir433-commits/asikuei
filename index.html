@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mini CNC G-Code 2D Path Visualizer & Time Estimator</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { font-family: ui-sans-serif, system-ui, sans-serif; }
+  textarea, .mono { font-family: ui-monospace, "Cascadia Code", Consolas, monospace; }
+  textarea { tab-size: 2; }
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
+</style>
+</head>
+<body class="bg-slate-950 text-slate-200 min-h-screen">
+
+<header class="border-b border-slate-800 bg-slate-900/70 backdrop-blur">
+  <div class="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between flex-wrap gap-2">
+    <div class="flex items-center gap-3">
+      <div class="w-9 h-9 rounded-lg bg-gradient-to-br from-cyan-400 to-emerald-400 flex items-center justify-center text-slate-950 font-black">G</div>
+      <div>
+        <h1 class="text-lg font-bold tracking-tight text-slate-100">Mini CNC G-Code <span class="text-cyan-400">2D Path Visualizer</span></h1>
+        <p class="text-xs text-slate-500">Visualisasi toolpath &amp; estimasi waktu pemesinan</p>
+      </div>
+    </div>
+    <span class="text-xs px-2 py-1 rounded border border-emerald-500/40 text-emerald-400 bg-emerald-500/10">G0/G1 · G90/G91 · G20/G21 · F</span>
+  </div>
+</header>
+
+<main class="max-w-7xl mx-auto px-4 py-6 grid lg:grid-cols-5 gap-6">
+
+  <!-- LEFT: input + results -->
+  <section class="lg:col-span-2 flex flex-col gap-4">
+    <div class="bg-slate-900 border border-slate-800 rounded-xl p-4">
+      <div class="flex items-center justify-between mb-2">
+        <label for="gcode" class="text-sm font-semibold text-cyan-400">Input G-Code</label>
+        <button id="btnSample" class="text-xs text-slate-400 hover:text-emerald-400 transition">Muat Contoh</button>
+      </div>
+      <textarea id="gcode" spellcheck="false" rows="16"
+        class="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 text-sm text-emerald-300 focus:outline-none focus:ring-2 focus:ring-cyan-500/50 focus:border-cyan-500 resize-y"></textarea>
+
+      <div class="grid grid-cols-2 gap-3 mt-3">
+        <div>
+          <label class="text-xs text-slate-400">Kecepatan rapid (mm/menit)</label>
+          <input id="rapidRate" type="number" min="1" value="3000"
+            class="mt-1 w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500/50">
+        </div>
+        <div>
+          <label class="text-xs text-slate-400">Feed default bila F kosong (mm/menit)</label>
+          <input id="defFeed" type="number" min="1" value="100"
+            class="mt-1 w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-cyan-500/50">
+        </div>
+      </div>
+
+      <div class="flex gap-3 mt-4">
+        <button id="btnSim" class="flex-1 bg-gradient-to-r from-cyan-500 to-emerald-500 hover:from-cyan-400 hover:to-emerald-400 text-slate-950 font-bold py-2.5 rounded-lg shadow-lg shadow-cyan-500/20 transition">▶ Simulasikan &amp; Hitung</button>
+        <button id="btnReset" class="px-5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 font-semibold py-2.5 rounded-lg transition">Reset Canvas</button>
+      </div>
+    </div>
+
+    <div class="bg-slate-900 border border-slate-800 rounded-xl p-4">
+      <h2 class="text-sm font-semibold text-cyan-400 mb-3">Hasil Perhitungan</h2>
+      <div class="grid grid-cols-2 gap-3">
+        <div class="col-span-2 bg-slate-950 border border-emerald-500/30 rounded-lg p-3">
+          <div class="text-xs text-slate-400">Estimasi Waktu Pemesinan</div>
+          <div class="mono text-2xl font-bold text-emerald-400"><span id="tTotalSec">0.0</span> <span class="text-sm font-normal text-slate-400">detik</span></div>
+          <div class="mono text-sm text-slate-300">≈ <span id="tTotalMin">0.00</span> menit (<span id="tTotalFmt">0:00</span>)</div>
+        </div>
+        <div class="bg-slate-950 border border-slate-800 rounded-lg p-3">
+          <div class="text-xs text-slate-400">Total Jarak Tempuh Sumbu</div>
+          <div class="mono text-lg font-bold text-cyan-400"><span id="dTotal">0.00</span> mm</div>
+        </div>
+        <div class="bg-slate-950 border border-slate-800 rounded-lg p-3">
+          <div class="text-xs text-slate-400">Jumlah Segmen</div>
+          <div class="mono text-lg font-bold text-slate-100" id="segCount">0</div>
+        </div>
+        <div class="bg-slate-950 border border-slate-800 rounded-lg p-3">
+          <div class="text-xs text-slate-400">Jarak Potong (G01)</div>
+          <div class="mono text-base text-cyan-300"><span id="dCut">0.00</span> mm</div>
+          <div class="mono text-xs text-slate-500"><span id="tCut">0.0</span> s</div>
+        </div>
+        <div class="bg-slate-950 border border-slate-800 rounded-lg p-3">
+          <div class="text-xs text-slate-400">Jarak Rapid (G00)</div>
+          <div class="mono text-base text-slate-300"><span id="dRapid">0.00</span> mm</div>
+          <div class="mono text-xs text-slate-500"><span id="tRapid">0.0</span> s</div>
+        </div>
+        <div class="col-span-2 bg-slate-950 border border-slate-800 rounded-lg p-3">
+          <div class="text-xs text-slate-400">Dimensi Bounding Box</div>
+          <div class="mono text-sm text-slate-200" id="bbox">-</div>
+        </div>
+      </div>
+      <div id="warnBox" class="hidden mt-3 text-xs bg-amber-500/10 border border-amber-500/40 text-amber-300 rounded-lg p-3 max-h-28 overflow-auto"></div>
+    </div>
+  </section>
+
+  <!-- RIGHT: canvas -->
+  <section class="lg:col-span-3">
+    <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 h-full flex flex-col">
+      <div class="flex items-center justify-between flex-wrap gap-2 mb-3">
+        <h2 class="text-sm font-semibold text-cyan-400">Toolpath 2D (X-Y)</h2>
+        <div class="flex items-center gap-4 text-xs text-slate-400">
+          <span class="flex items-center gap-1.5"><svg width="26" height="6"><line x1="0" y1="3" x2="26" y2="3" stroke="#64748b" stroke-width="2" stroke-dasharray="5 4"/></svg>G00 Rapid</span>
+          <span class="flex items-center gap-1.5"><svg width="26" height="6"><line x1="0" y1="3" x2="26" y2="3" stroke="#22d3ee" stroke-width="2.5"/></svg>G01 Cutting</span>
+          <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-emerald-400 inline-block"></span>Start/Tool</span>
+        </div>
+      </div>
+      <div class="relative flex-1 min-h-[460px] bg-slate-950 border border-slate-800 rounded-lg overflow-hidden">
+        <canvas id="cv" class="absolute inset-0 w-full h-full"></canvas>
+      </div>
+      <div class="mono text-xs text-slate-500 mt-2">Kursor: <span id="cursor">X - , Y -</span></div>
+    </div>
+  </section>
+</main>
+
+<footer class="text-center text-xs text-slate-600 pb-6">Estimasi mengabaikan akselerasi/deselerasi mesin — waktu aktual bisa lebih lama.</footer>
+
+<script>
+(() => {
+  const SAMPLE = [
+    "(Contoh: kotak 40x40 mm + oktagon di tengah)",
+    "G21 G90",
+    "G0 X0 Y0",
+    "G0 X10 Y10",
+    "G1 X50 Y10 F300",
+    "G1 X50 Y50",
+    "G1 X10 Y50",
+    "G1 X10 Y10",
+    "G0 X30 Y22",
+    "G1 X35.66 Y24.34 F200",
+    "G1 X38 Y30",
+    "G1 X35.66 Y35.66",
+    "G1 X30 Y38",
+    "G1 X24.34 Y35.66",
+    "G1 X22 Y30",
+    "G1 X24.34 Y24.34",
+    "G1 X30 Y22",
+    "G0 X10 Y10",
+    "G1 X50 Y50 F400 ; diagonal",
+    "G0 X0 Y0"
+  ].join("\n");
+
+  const $ = id => document.getElementById(id);
+  const ta = $("gcode"), cv = $("cv"), ctx = cv.getContext("2d");
+  let model = null, view = null, anim = null, blank = false;
+
+  /* ---------- PARSER ---------- */
+  function parse(text) {
+    const rapidRate = Math.max(1, parseFloat($("rapidRate").value) || 3000);
+    const defFeed = Math.max(1, parseFloat($("defFeed").value) || 100);
+    const segs = [], warns = [];
+    let x = 0, y = 0, abs = true, mode = null, feed = null, unit = 1, feedWarned = false;
+
+    text.split(/\r?\n/).forEach((raw, i) => {
+      const ln = i + 1;
+      let line = raw.replace(/\([^)]*\)/g, "").replace(/;.*$/, "").toUpperCase().trim();
+      if (!line) return;
+      const words = [...line.matchAll(/([A-Z])\s*([-+]?(?:\d+\.?\d*|\.\d+))/g)];
+      if (!words.length) { warns.push(`Baris ${ln}: tidak dikenali "${raw.trim()}"`); return; }
+
+      let nx = null, ny = null, hasMotionG = false;
+      for (const [, L, V] of words) {
+        const v = parseFloat(V);
+        if (L === "G") {
+          const g = Math.round(v * 10) / 10;
+          if (g === 0) { mode = 0; hasMotionG = true; }
+          else if (g === 1) { mode = 1; hasMotionG = true; }
+          else if (g === 2 || g === 3) { mode = null; hasMotionG = true; warns.push(`Baris ${ln}: G${g} (arc) belum didukung, dilewati.`); }
+          else if (g === 90) abs = true;
+          else if (g === 91) abs = false;
+          else if (g === 20) unit = 25.4;
+          else if (g === 21) unit = 1;
+          else if ([17, 18, 19, 28, 40, 49, 54, 80, 94].includes(g)) { /* diabaikan */ }
+          else warns.push(`Baris ${ln}: G${g} diabaikan.`);
+        } else if (L === "X") nx = v * unit;
+        else if (L === "Y") ny = v * unit;
+        else if (L === "F") feed = v * unit;
+        /* N, M, S, T, Z, dll. diabaikan */
+      }
+
+      if ((nx !== null || ny !== null) && mode !== null) {
+        const tx = nx === null ? x : (abs ? nx : x + nx);
+        const ty = ny === null ? y : (abs ? ny : y + ny);
+        const len = Math.hypot(tx - x, ty - y);
+        let f = rapidRate;
+        if (mode === 1) {
+          if (!feed) {
+            if (!feedWarned) { warns.push(`Baris ${ln}: G01 tanpa F, memakai feed default ${defFeed} mm/menit.`); feedWarned = true; }
+            f = defFeed;
+          } else f = feed;
+        }
+        if (len > 0) segs.push({ x1: x, y1: y, x2: tx, y2: ty, type: mode, len, time: len / f * 60, line: ln });
+        x = tx; y = ty;
+      } else if ((nx !== null || ny !== null) && mode === null && !hasMotionG) {
+        warns.push(`Baris ${ln}: koordinat tanpa G0/G1 aktif, dilewati.`);
+      }
+    });
+
+    let dCut = 0, dRapid = 0, tCut = 0, tRapid = 0;
+    segs.forEach(s => { if (s.type === 1) { dCut += s.len; tCut += s.time; } else { dRapid += s.len; tRapid += s.time; } });
+    return { segs, warns, dCut, dRapid, tCut, tRapid, dTotal: dCut + dRapid, tTotal: tCut + tRapid };
+  }
+
+  /* ---------- STATS ---------- */
+  const fmtTime = s => { const m = Math.floor(s / 60), r = Math.round(s - m * 60); return r === 60 ? `${m + 1}:00` : `${m}:${String(r).padStart(2, "0")}`; };
+
+  function showStats(m) {
+    $("dTotal").textContent = m.dTotal.toFixed(2);
+    $("dCut").textContent = m.dCut.toFixed(2);
+    $("dRapid").textContent = m.dRapid.toFixed(2);
+    $("tCut").textContent = m.tCut.toFixed(1);
+    $("tRapid").textContent = m.tRapid.toFixed(1);
+    $("tTotalSec").textContent = m.tTotal.toFixed(1);
+    $("tTotalMin").textContent = (m.tTotal / 60).toFixed(2);
+    $("tTotalFmt").textContent = fmtTime(m.tTotal);
+    $("segCount").textContent = m.segs.length;
+    if (m.segs.length) {
+      const b = bounds(m.segs);
+      $("bbox").textContent = `X ${b.minX.toFixed(2)} → ${b.maxX.toFixed(2)}  |  Y ${b.minY.toFixed(2)} → ${b.maxY.toFixed(2)}  (${(b.maxX - b.minX).toFixed(2)} × ${(b.maxY - b.minY).toFixed(2)} mm)`;
+    } else $("bbox").textContent = "-";
+    const wb = $("warnBox");
+    if (m.warns.length) { wb.classList.remove("hidden"); wb.innerHTML = m.warns.slice(0, 30).map(w => "⚠ " + w.replace(/</g, "&lt;")).join("<br>"); }
+    else wb.classList.add("hidden");
+  }
+
+  function bounds(segs) {
+    let minX = 0, maxX = 0, minY = 0, maxY = 0; // termasuk titik origin
+    segs.forEach(s => {
+      minX = Math.min(minX, s.x1, s.x2); maxX = Math.max(maxX, s.x1, s.x2);
+      minY = Math.min(minY, s.y1, s.y2); maxY = Math.max(maxY, s.y1, s.y2);
+    });
+    return { minX, maxX, minY, maxY };
+  }
+
+  /* ---------- CANVAS ---------- */
+  function resize() {
+    const dpr = window.devicePixelRatio || 1;
+    const r = cv.getBoundingClientRect();
+    cv.width = Math.max(1, Math.floor(r.width * dpr));
+    cv.height = Math.max(1, Math.floor(r.height * dpr));
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    draw(Infinity);
+  }
+
+  function computeView(W, H) {
+    const pad = 50;
+    const b = model && model.segs.length ? bounds(model.segs) : { minX: 0, maxX: 10, minY: 0, maxY: 10 };
+    const bw = Math.max(b.maxX - b.minX, 1e-6), bh = Math.max(b.maxY - b.minY, 1e-6);
+    let sc = Math.min((W - 2 * pad) / bw, (H - 2 * pad) / bh);
+    if (!isFinite(sc) || sc <= 0) sc = 1;
+    const ox = (W - bw * sc) / 2 - b.minX * sc;          // pusat horizontal
+    const oy = H - ((H - bh * sc) / 2 - b.minY * sc);    // Y dibalik (Y+ ke atas)
+    return { sc, ox, oy };
+  }
+
+  const tx = (v, x) => v.ox + x * v.sc;
+  const ty = (v, y) => v.oy - y * v.sc;
+
+  function niceStep(raw) {
+    const p = Math.pow(10, Math.floor(Math.log10(raw))), n = raw / p;
+    return (n < 1.5 ? 1 : n < 3.5 ? 2 : n < 7.5 ? 5 : 10) * p;
+  }
+
+  function drawGrid(v, W, H) {
+    const step = niceStep(40 / v.sc);
+    const x0 = Math.floor((0 - v.ox) / v.sc / step) * step, x1 = (W - v.ox) / v.sc;
+    const y1 = (v.oy - 0) / v.sc, y0 = (v.oy - H) / v.sc;
+    ctx.lineWidth = 1; ctx.font = "10px ui-monospace, monospace"; ctx.fillStyle = "#475569";
+    for (let gx = x0; gx <= x1; gx += step) {
+      const px = Math.round(tx(v, gx)) + 0.5;
+      ctx.strokeStyle = Math.abs(gx) < step / 1e3 ? "#334155" : "#1e293b";
+      ctx.beginPath(); ctx.moveTo(px, 0); ctx.lineTo(px, H); ctx.stroke();
+      ctx.fillText(+gx.toFixed(4), px + 2, H - 4);
+    }
+    for (let gy = Math.floor(y0 / step) * step; gy <= y1; gy += step) {
+      const py = Math.round(ty(v, gy)) + 0.5;
+      ctx.strokeStyle = Math.abs(gy) < step / 1e3 ? "#334155" : "#1e293b";
+      ctx.beginPath(); ctx.moveTo(0, py); ctx.lineTo(W, py); ctx.stroke();
+      ctx.fillText(+gy.toFixed(4), 4, py - 2);
+    }
+    // origin
+    const ox = tx(v, 0), oy = ty(v, 0);
+    ctx.strokeStyle = "#f59e0b"; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(ox - 8, oy); ctx.lineTo(ox + 8, oy); ctx.moveTo(ox, oy - 8); ctx.lineTo(ox, oy + 8); ctx.stroke();
+    ctx.fillStyle = "#f59e0b"; ctx.fillText("(0,0)", ox + 10, oy + 14);
+  }
+
+  // progress = jarak kumulatif yang digambar (Infinity = semua)
+  function draw(progress) {
+    const W = cv.clientWidth, H = cv.clientHeight;
+    ctx.clearRect(0, 0, W, H);
+    view = computeView(W, H);
+    drawGrid(view, W, H);
+    if (blank || !model || !model.segs.length) {
+      if (!blank) {
+        ctx.fillStyle = "#475569"; ctx.font = "14px ui-sans-serif, system-ui"; ctx.textAlign = "center";
+        ctx.fillText("Tidak ada gerakan G0/G1 yang valid", W / 2, H / 2); ctx.textAlign = "left";
+      }
+      return;
+    }
+    ctx.lineCap = "round"; ctx.lineJoin = "round";
+    let acc = 0, tool = { x: model.segs[0].x1, y: model.segs[0].y1 };
+    for (const s of model.segs) {
+      if (acc >= progress) break;
+      let f = Math.min(1, (progress - acc) / s.len);
+      const ex = s.x1 + (s.x2 - s.x1) * f, ey = s.y1 + (s.y2 - s.y1) * f;
+      ctx.beginPath(); ctx.moveTo(tx(view, s.x1), ty(view, s.y1)); ctx.lineTo(tx(view, ex), ty(view, ey));
+      if (s.type === 0) {
+        ctx.setLineDash([7, 6]); ctx.strokeStyle = "#64748b"; ctx.lineWidth = 1.5; ctx.shadowBlur = 0;
+      } else {
+        ctx.setLineDash([]); ctx.strokeStyle = "#22d3ee"; ctx.lineWidth = 2.5;
+        ctx.shadowColor = "rgba(34,211,238,.6)"; ctx.shadowBlur = 8;
+      }
+      ctx.stroke();
+      ctx.setLineDash([]); ctx.shadowBlur = 0;
+      tool = { x: ex, y: ey };
+      acc += s.len;
+    }
+    // titik awal
+    const st = model.segs[0];
+    ctx.fillStyle = "#34d399"; ctx.beginPath(); ctx.arc(tx(view, st.x1), ty(view, st.y1), 4.5, 0, 7); ctx.fill();
+    // posisi tool
+    ctx.strokeStyle = "#34d399"; ctx.lineWidth = 2; ctx.fillStyle = "rgba(52,211,153,.25)";
+    ctx.beginPath(); ctx.arc(tx(view, tool.x), ty(view, tool.y), 7, 0, 7); ctx.fill(); ctx.stroke();
+  }
+
+  /* ---------- ACTIONS ---------- */
+  function stopAnim() { if (anim) { cancelAnimationFrame(anim); anim = null; } }
+
+  function update(animate) {
+    stopAnim(); blank = false;
+    model = parse(ta.value);
+    showStats(model);
+    if (!animate || !model.dTotal) { draw(Infinity); return; }
+    const dur = 2500, t0 = performance.now();
+    const step = now => {
+      const p = Math.min(1, (now - t0) / dur);
+      draw(p * model.dTotal);
+      anim = p < 1 ? requestAnimationFrame(step) : null;
+    };
+    anim = requestAnimationFrame(step);
+  }
+
+  function reset() {
+    stopAnim(); blank = true;
+    model = { segs: [], warns: [], dCut: 0, dRapid: 0, tCut: 0, tRapid: 0, dTotal: 0, tTotal: 0 };
+    showStats(model); draw(Infinity);
+  }
+
+  let deb;
+  ta.addEventListener("input", () => { clearTimeout(deb); deb = setTimeout(() => update(false), 150); });
+  ["rapidRate", "defFeed"].forEach(id => $(id).addEventListener("input", () => update(false)));
+  $("btnSim").addEventListener("click", () => update(true));
+  $("btnReset").addEventListener("click", reset);
+  $("btnSample").addEventListener("click", () => { ta.value = SAMPLE; update(false); });
+  window.addEventListener("resize", resize);
+
+  cv.addEventListener("mousemove", e => {
+    if (!view) return;
+    const r = cv.getBoundingClientRect();
+    const x = (e.clientX - r.left - view.ox) / view.sc, y = (view.oy - (e.clientY - r.top)) / view.sc;
+    $("cursor").textContent = `X ${x.toFixed(2)}, Y ${y.toFixed(2)}`;
+  });
+  cv.addEventListener("mouseleave", () => $("cursor").textContent = "X - , Y -");
+
+  ta.value = SAMPLE;
+  resize();
+  update(false);
+})();
+</script>
+</body>
+</html>
