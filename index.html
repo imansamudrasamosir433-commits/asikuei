@@ -21,10 +21,10 @@
       <div class="w-9 h-9 rounded-lg bg-gradient-to-br from-cyan-400 to-emerald-400 flex items-center justify-center text-slate-950 font-black">G</div>
       <div>
         <h1 class="text-lg font-bold tracking-tight text-slate-100">Mini CNC G-Code <span class="text-cyan-400">2D Path Visualizer</span></h1>
-        <p class="text-xs text-slate-500">Visualisasi toolpath &amp; estimasi waktu pemesinan</p>
+        <p class="text-xs text-slate-500">Visualisasi toolpath, interpolasi busur &amp; estimasi waktu pemesinan</p>
       </div>
     </div>
-    <span class="text-xs px-2 py-1 rounded border border-emerald-500/40 text-emerald-400 bg-emerald-500/10">G0/G1 · G90/G91 · G20/G21 · F</span>
+    <span class="text-xs px-2 py-1 rounded border border-emerald-500/40 text-emerald-400 bg-emerald-500/10">G0 · G1 · G2/G3 (I,J / R) · G90/G91 · G20/G21 · F</span>
   </div>
 </header>
 
@@ -37,7 +37,7 @@
         <label for="gcode" class="text-sm font-semibold text-cyan-400">Input G-Code</label>
         <button id="btnSample" class="text-xs text-slate-400 hover:text-emerald-400 transition">Muat Contoh</button>
       </div>
-      <textarea id="gcode" spellcheck="false" rows="16"
+      <textarea id="gcode" spellcheck="false" rows="17"
         class="w-full bg-slate-950 border border-slate-700 rounded-lg p-3 text-sm text-emerald-300 focus:outline-none focus:ring-2 focus:ring-cyan-500/50 focus:border-cyan-500 resize-y"></textarea>
 
       <div class="grid grid-cols-2 gap-3 mt-3">
@@ -74,9 +74,10 @@
         <div class="bg-slate-950 border border-slate-800 rounded-lg p-3">
           <div class="text-xs text-slate-400">Jumlah Segmen</div>
           <div class="mono text-lg font-bold text-slate-100" id="segCount">0</div>
+          <div class="mono text-xs text-slate-500"><span id="segLine">0</span> garis · <span id="segArc">0</span> busur</div>
         </div>
         <div class="bg-slate-950 border border-slate-800 rounded-lg p-3">
-          <div class="text-xs text-slate-400">Jarak Potong (G01)</div>
+          <div class="text-xs text-slate-400">Jarak Potong (G01/G02/G03)</div>
           <div class="mono text-base text-cyan-300"><span id="dCut">0.00</span> mm</div>
           <div class="mono text-xs text-slate-500"><span id="tCut">0.0</span> s</div>
         </div>
@@ -101,11 +102,11 @@
         <h2 class="text-sm font-semibold text-cyan-400">Toolpath 2D (X-Y)</h2>
         <div class="flex items-center gap-4 text-xs text-slate-400">
           <span class="flex items-center gap-1.5"><svg width="26" height="6"><line x1="0" y1="3" x2="26" y2="3" stroke="#64748b" stroke-width="2" stroke-dasharray="5 4"/></svg>G00 Rapid</span>
-          <span class="flex items-center gap-1.5"><svg width="26" height="6"><line x1="0" y1="3" x2="26" y2="3" stroke="#22d3ee" stroke-width="2.5"/></svg>G01 Cutting</span>
+          <span class="flex items-center gap-1.5"><svg width="26" height="6"><line x1="0" y1="3" x2="26" y2="3" stroke="#22d3ee" stroke-width="2.5"/></svg>G01/G02/G03 Cutting</span>
           <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-emerald-400 inline-block"></span>Start/Tool</span>
         </div>
       </div>
-      <div class="relative flex-1 min-h-[460px] bg-slate-950 border border-slate-800 rounded-lg overflow-hidden">
+      <div class="relative flex-1 min-h-[480px] bg-slate-950 border border-slate-800 rounded-lg overflow-hidden">
         <canvas id="cv" class="absolute inset-0 w-full h-full"></canvas>
       </div>
       <div class="mono text-xs text-slate-500 mt-2">Kursor: <span id="cursor">X - , Y -</span></div>
@@ -113,96 +114,186 @@
   </section>
 </main>
 
-<footer class="text-center text-xs text-slate-600 pb-6">Estimasi mengabaikan akselerasi/deselerasi mesin — waktu aktual bisa lebih lama.</footer>
+<footer class="text-center text-xs text-slate-600 pb-6">Bidang kerja XY (G17). I/J bersifat inkremental dari titik awal (default), G90.1 untuk absolut. Estimasi mengabaikan akselerasi/deselerasi mesin.</footer>
 
 <script>
 (() => {
   const SAMPLE = [
-    "(Contoh: kotak 40x40 mm + oktagon di tengah)",
-    "G21 G90",
+    "(Contoh: plat 60x40 sudut R10 + lubang + busur R)",
+    "G21 G90 G17",
     "G0 X0 Y0",
-    "G0 X10 Y10",
-    "G1 X50 Y10 F300",
-    "G1 X50 Y50",
-    "G1 X10 Y50",
-    "G1 X10 Y10",
-    "G0 X30 Y22",
-    "G1 X35.66 Y24.34 F200",
-    "G1 X38 Y30",
-    "G1 X35.66 Y35.66",
-    "G1 X30 Y38",
-    "G1 X24.34 Y35.66",
-    "G1 X22 Y30",
-    "G1 X24.34 Y24.34",
-    "G1 X30 Y22",
-    "G0 X10 Y10",
-    "G1 X50 Y50 F400 ; diagonal",
-    "G0 X0 Y0"
+    "G0 X10 Y0",
+    "(Kontur luar dengan 4 sudut membulat)",
+    "G1 X50 Y0 F400",
+    "G3 X60 Y10 I0 J10 F300   ; sudut kanan-bawah (CCW)",
+    "G1 X60 Y30 F400",
+    "G3 X50 Y40 I-10 J0 F300  ; sudut kanan-atas",
+    "G1 X10 Y40 F400",
+    "G3 X0 Y30 I0 J-10 F300   ; sudut kiri-atas",
+    "G1 X0 Y10 F400",
+    "G3 X10 Y0 I10 J0 F300    ; sudut kiri-bawah",
+    "(Lingkaran penuh searah jarum jam, I/J)",
+    "G0 X20 Y20",
+    "G2 X20 Y20 I10 J0 F250",
+    "(Setengah lingkaran dengan R)",
+    "G0 X42 Y8",
+    "G2 X52 Y8 R5 F200",
+    "(Busur kecil CCW dengan R positif)",
+    "G0 X43 Y26",
+    "G3 X53 Y32 R6 F200",
+    "G0 X0 Y0",
+    "M30"
   ].join("\n");
 
   const $ = id => document.getElementById(id);
   const ta = $("gcode"), cv = $("cv"), ctx = cv.getContext("2d");
+  const TWO_PI = Math.PI * 2;
   let model = null, view = null, anim = null, blank = false;
+
+  /* ---------- ARC GEOMETRY ---------- */
+  // Mengembalikan {pts, warn} atau {err}. cw=true untuk G2, false untuk G3.
+  function arcPts(x0, y0, x1, y1, P, cw, ijAbs) {
+    let cx, cy, warn = null;
+    const d = Math.hypot(x1 - x0, y1 - y0);
+    if (P.I !== undefined || P.J !== undefined) {
+      const I = P.I || 0, J = P.J || 0;
+      cx = ijAbs ? I : x0 + I;
+      cy = ijAbs ? J : y0 + J;
+    } else {
+      const R = P.R;
+      if (Math.abs(R) < 1e-9) return { err: "R = 0 tidak valid" };
+      if (d < 1e-9) return { err: "busur R dengan titik awal = titik akhir tidak valid" };
+      if (d / 2 - Math.abs(R) > Math.max(0.01, 1e-3 * Math.abs(R))) return { err: `R terlalu kecil (jarak titik ${d.toFixed(3)} > 2R)` };
+      const h = Math.sqrt(Math.max(0, R * R - d * d / 4));
+      const mx = (x0 + x1) / 2, my = (y0 + y1) / 2;
+      const px = -(y1 - y0) / d, py = (x1 - x0) / d;         // normal kiri dari arah chord
+      const s = (cw ? -1 : 1) * (R > 0 ? 1 : -1);             // R<0 -> busur besar (>180°)
+      cx = mx + s * h * px; cy = my + s * h * py;
+    }
+    const r0 = Math.hypot(x0 - cx, y0 - cy), r1 = Math.hypot(x1 - cx, y1 - cy);
+    if (r0 < 1e-9) return { err: "radius busur = 0 (I/J = 0)" };
+    if (Math.abs(r0 - r1) > Math.max(0.01, 1e-3 * r0))
+      warn = `radius awal ${r0.toFixed(3)} ≠ radius akhir ${r1.toFixed(3)} mm, busur digambar sebagai spiral`;
+    const a0 = Math.atan2(y0 - cy, x0 - cx), a1 = Math.atan2(y1 - cy, x1 - cx);
+    let sweep = a1 - a0;
+    if (!cw) { while (sweep <= 1e-9) sweep += TWO_PI; }      // CCW: sapuan positif
+    else { while (sweep >= -1e-9) sweep -= TWO_PI; }         // CW: sapuan negatif
+    const n = Math.max(4, Math.ceil(Math.abs(sweep) / (Math.PI / 360)));  // ~0.5° per langkah
+    const pts = [];
+    for (let i = 0; i <= n; i++) {
+      const t = i / n, a = a0 + sweep * t, r = r0 + (r1 - r0) * t;
+      pts.push([cx + r * Math.cos(a), cy + r * Math.sin(a)]);
+    }
+    pts[0] = [x0, y0]; pts[n] = [x1, y1];
+    return { pts, warn };
+  }
 
   /* ---------- PARSER ---------- */
   function parse(text) {
     const rapidRate = Math.max(1, parseFloat($("rapidRate").value) || 3000);
     const defFeed = Math.max(1, parseFloat($("defFeed").value) || 100);
     const segs = [], warns = [];
-    let x = 0, y = 0, abs = true, mode = null, feed = null, unit = 1, feedWarned = false;
+    const st = { x: 0, y: 0, abs: true, ijAbs: false, mode: null, feed: null, unit: 1 };
+    let feedWarned = false, stop = false;
+    const lines = text.split(/\r?\n/);
 
-    text.split(/\r?\n/).forEach((raw, i) => {
-      const ln = i + 1;
-      let line = raw.replace(/\([^)]*\)/g, "").replace(/;.*$/, "").toUpperCase().trim();
-      if (!line) return;
-      const words = [...line.matchAll(/([A-Z])\s*([-+]?(?:\d+\.?\d*|\.\d+))/g)];
-      if (!words.length) { warns.push(`Baris ${ln}: tidak dikenali "${raw.trim()}"`); return; }
+    for (let i = 0; i < lines.length && !stop; i++) {
+      const ln = i + 1, raw = lines[i];
+      const line = raw.replace(/\([^)]*\)/g, "").replace(/;.*$/, "").toUpperCase().trim();
+      if (!line || line[0] === "%" || line[0] === "/") continue;
+      const words = [...line.matchAll(/([A-Z])\s*([-+]?(?:\d+\.?\d*|\.\d+))/g)].map(m => [m[1], parseFloat(m[2])]);
+      if (!words.length) { warns.push(`Baris ${ln}: tidak dikenali "${raw.trim()}"`); continue; }
 
-      let nx = null, ny = null, hasMotionG = false;
-      for (const [, L, V] of words) {
-        const v = parseFloat(V);
+      let skip = false, setPos = false;
+      // Pass 1: kode G / M (menentukan mode, satuan, dsb.)
+      for (const [L, v] of words) {
         if (L === "G") {
           const g = Math.round(v * 10) / 10;
-          if (g === 0) { mode = 0; hasMotionG = true; }
-          else if (g === 1) { mode = 1; hasMotionG = true; }
-          else if (g === 2 || g === 3) { mode = null; hasMotionG = true; warns.push(`Baris ${ln}: G${g} (arc) belum didukung, dilewati.`); }
-          else if (g === 90) abs = true;
-          else if (g === 91) abs = false;
-          else if (g === 20) unit = 25.4;
-          else if (g === 21) unit = 1;
-          else if ([17, 18, 19, 28, 40, 49, 54, 80, 94].includes(g)) { /* diabaikan */ }
+          if (g === 0 || g === 1 || g === 2 || g === 3) st.mode = g;
+          else if (g === 90) st.abs = true;
+          else if (g === 91) st.abs = false;
+          else if (g === 90.1) st.ijAbs = true;
+          else if (g === 91.1) st.ijAbs = false;
+          else if (g === 20) st.unit = 25.4;
+          else if (g === 21) st.unit = 1;
+          else if (g === 92) setPos = true;
+          else if (g === 4 || g === 28 || g === 30 || g === 53) { skip = true; warns.push(`Baris ${ln}: G${g} tidak dihitung dalam estimasi.`); }
+          else if (g === 18 || g === 19) warns.push(`Baris ${ln}: G${g} — hanya bidang XY (G17) yang didukung.`);
+          else if ([17, 40, 43, 49, 54, 55, 56, 57, 58, 59, 61, 64, 80, 94, 95, 98, 99].includes(g)) { /* diabaikan tanpa efek */ }
           else warns.push(`Baris ${ln}: G${g} diabaikan.`);
-        } else if (L === "X") nx = v * unit;
-        else if (L === "Y") ny = v * unit;
-        else if (L === "F") feed = v * unit;
-        /* N, M, S, T, Z, dll. diabaikan */
+        } else if (L === "M" && (v === 2 || v === 30)) stop = true;
+      }
+      // Pass 2: parameter numerik (dikali satuan aktif)
+      const P = {};
+      for (const [L, v] of words) {
+        if ("XYIJR".includes(L)) P[L] = v * st.unit;
+        else if (L === "F") st.feed = v * st.unit;
+      }
+      if (skip) continue;
+      if (setPos) {
+        if (P.X !== undefined) st.x = P.X;
+        if (P.Y !== undefined) st.y = P.Y;
+        continue;
       }
 
-      if ((nx !== null || ny !== null) && mode !== null) {
-        const tx = nx === null ? x : (abs ? nx : x + nx);
-        const ty = ny === null ? y : (abs ? ny : y + ny);
-        const len = Math.hypot(tx - x, ty - y);
-        let f = rapidRate;
-        if (mode === 1) {
-          if (!feed) {
-            if (!feedWarned) { warns.push(`Baris ${ln}: G01 tanpa F, memakai feed default ${defFeed} mm/menit.`); feedWarned = true; }
-            f = defFeed;
-          } else f = feed;
+      const hasXY = P.X !== undefined || P.Y !== undefined;
+      const isArc = st.mode === 2 || st.mode === 3;
+      const hasIJR = P.I !== undefined || P.J !== undefined || P.R !== undefined;
+      if (!hasXY && !(isArc && hasIJR)) continue;
+      if (st.mode === null) { warns.push(`Baris ${ln}: koordinat tanpa G0/G1/G2/G3 aktif, dilewati.`); continue; }
+
+      const x0 = st.x, y0 = st.y;
+      const x1 = P.X === undefined ? x0 : (st.abs ? P.X : x0 + P.X);
+      const y1 = P.Y === undefined ? y0 : (st.abs ? P.Y : y0 + P.Y);
+      let type = st.mode, pts = null;
+
+      if (isArc) {
+        if (!hasIJR) {
+          warns.push(`Baris ${ln}: G${type} tanpa I/J/R, diperlakukan sebagai garis lurus.`);
+          type = 1;
+        } else {
+          const a = arcPts(x0, y0, x1, y1, P, type === 2, st.ijAbs);
+          if (a.err) { warns.push(`Baris ${ln}: ${a.err}, diperlakukan sebagai garis lurus.`); type = 1; }
+          else { pts = a.pts; if (a.warn) warns.push(`Baris ${ln}: ${a.warn}.`); }
         }
-        if (len > 0) segs.push({ x1: x, y1: y, x2: tx, y2: ty, type: mode, len, time: len / f * 60, line: ln });
-        x = tx; y = ty;
-      } else if ((nx !== null || ny !== null) && mode === null && !hasMotionG) {
-        warns.push(`Baris ${ln}: koordinat tanpa G0/G1 aktif, dilewati.`);
       }
-    });
+      if (!pts) pts = [[x0, y0], [x1, y1]];
 
-    let dCut = 0, dRapid = 0, tCut = 0, tRapid = 0;
-    segs.forEach(s => { if (s.type === 1) { dCut += s.len; tCut += s.time; } else { dRapid += s.len; tRapid += s.time; } });
-    return { segs, warns, dCut, dRapid, tCut, tRapid, dTotal: dCut + dRapid, tTotal: tCut + tRapid };
+      let f = rapidRate;
+      if (type !== 0) {
+        if (!st.feed) {
+          if (!feedWarned) { warns.push(`Baris ${ln}: gerakan potong tanpa F, memakai feed default ${defFeed} mm/menit.`); feedWarned = true; }
+          f = defFeed;
+        } else f = st.feed;
+      }
+
+      const cum = [0];
+      for (let k = 1; k < pts.length; k++) cum.push(cum[k - 1] + Math.hypot(pts[k][0] - pts[k - 1][0], pts[k][1] - pts[k - 1][1]));
+      const len = cum[cum.length - 1];
+      if (len > 1e-9) segs.push({ type, pts, cum, len, time: len / f * 60, line: ln });
+      st.x = x1; st.y = y1;
+    }
+
+    let dCut = 0, dRapid = 0, tCut = 0, tRapid = 0, nLine = 0, nArc = 0;
+    segs.forEach(s => {
+      if (s.type === 0) { dRapid += s.len; tRapid += s.time; }
+      else { dCut += s.len; tCut += s.time; }
+      if (s.type >= 2) nArc++; else nLine++;
+    });
+    return { segs, warns, dCut, dRapid, tCut, tRapid, nLine, nArc, dTotal: dCut + dRapid, tTotal: tCut + tRapid };
   }
 
   /* ---------- STATS ---------- */
   const fmtTime = s => { const m = Math.floor(s / 60), r = Math.round(s - m * 60); return r === 60 ? `${m + 1}:00` : `${m}:${String(r).padStart(2, "0")}`; };
+
+  function bounds(segs) {
+    let minX = 0, maxX = 0, minY = 0, maxY = 0; // termasuk titik origin
+    segs.forEach(s => s.pts.forEach(p => {
+      if (p[0] < minX) minX = p[0]; if (p[0] > maxX) maxX = p[0];
+      if (p[1] < minY) minY = p[1]; if (p[1] > maxY) maxY = p[1];
+    }));
+    return { minX, maxX, minY, maxY };
+  }
 
   function showStats(m) {
     $("dTotal").textContent = m.dTotal.toFixed(2);
@@ -214,22 +305,17 @@
     $("tTotalMin").textContent = (m.tTotal / 60).toFixed(2);
     $("tTotalFmt").textContent = fmtTime(m.tTotal);
     $("segCount").textContent = m.segs.length;
+    $("segLine").textContent = m.nLine;
+    $("segArc").textContent = m.nArc;
     if (m.segs.length) {
       const b = bounds(m.segs);
       $("bbox").textContent = `X ${b.minX.toFixed(2)} → ${b.maxX.toFixed(2)}  |  Y ${b.minY.toFixed(2)} → ${b.maxY.toFixed(2)}  (${(b.maxX - b.minX).toFixed(2)} × ${(b.maxY - b.minY).toFixed(2)} mm)`;
     } else $("bbox").textContent = "-";
     const wb = $("warnBox");
-    if (m.warns.length) { wb.classList.remove("hidden"); wb.innerHTML = m.warns.slice(0, 30).map(w => "⚠ " + w.replace(/</g, "&lt;")).join("<br>"); }
-    else wb.classList.add("hidden");
-  }
-
-  function bounds(segs) {
-    let minX = 0, maxX = 0, minY = 0, maxY = 0; // termasuk titik origin
-    segs.forEach(s => {
-      minX = Math.min(minX, s.x1, s.x2); maxX = Math.max(maxX, s.x1, s.x2);
-      minY = Math.min(minY, s.y1, s.y2); maxY = Math.max(maxY, s.y1, s.y2);
-    });
-    return { minX, maxX, minY, maxY };
+    if (m.warns.length) {
+      wb.classList.remove("hidden");
+      wb.innerHTML = m.warns.slice(0, 30).map(w => "⚠ " + w.replace(/&/g, "&amp;").replace(/</g, "&lt;")).join("<br>");
+    } else wb.classList.add("hidden");
   }
 
   /* ---------- CANVAS ---------- */
@@ -248,13 +334,13 @@
     const bw = Math.max(b.maxX - b.minX, 1e-6), bh = Math.max(b.maxY - b.minY, 1e-6);
     let sc = Math.min((W - 2 * pad) / bw, (H - 2 * pad) / bh);
     if (!isFinite(sc) || sc <= 0) sc = 1;
-    const ox = (W - bw * sc) / 2 - b.minX * sc;          // pusat horizontal
-    const oy = H - ((H - bh * sc) / 2 - b.minY * sc);    // Y dibalik (Y+ ke atas)
+    const ox = (W - bw * sc) / 2 - b.minX * sc;
+    const oy = H - ((H - bh * sc) / 2 - b.minY * sc);   // Y dibalik (Y+ ke atas)
     return { sc, ox, oy };
   }
 
-  const tx = (v, x) => v.ox + x * v.sc;
-  const ty = (v, y) => v.oy - y * v.sc;
+  const X = (v, x) => v.ox + x * v.sc;
+  const Y = (v, y) => v.oy - y * v.sc;
 
   function niceStep(raw) {
     const p = Math.pow(10, Math.floor(Math.log10(raw))), n = raw / p;
@@ -264,28 +350,27 @@
   function drawGrid(v, W, H) {
     const step = niceStep(40 / v.sc);
     const x0 = Math.floor((0 - v.ox) / v.sc / step) * step, x1 = (W - v.ox) / v.sc;
-    const y1 = (v.oy - 0) / v.sc, y0 = (v.oy - H) / v.sc;
-    ctx.lineWidth = 1; ctx.font = "10px ui-monospace, monospace"; ctx.fillStyle = "#475569";
+    const y1 = v.oy / v.sc, y0 = (v.oy - H) / v.sc;
+    ctx.lineWidth = 1; ctx.font = "10px ui-monospace, monospace"; ctx.fillStyle = "#475569"; ctx.textAlign = "left";
     for (let gx = x0; gx <= x1; gx += step) {
-      const px = Math.round(tx(v, gx)) + 0.5;
+      const px = Math.round(X(v, gx)) + 0.5;
       ctx.strokeStyle = Math.abs(gx) < step / 1e3 ? "#334155" : "#1e293b";
       ctx.beginPath(); ctx.moveTo(px, 0); ctx.lineTo(px, H); ctx.stroke();
-      ctx.fillText(+gx.toFixed(4), px + 2, H - 4);
+      ctx.fillText(String(+gx.toFixed(4)), px + 2, H - 4);
     }
     for (let gy = Math.floor(y0 / step) * step; gy <= y1; gy += step) {
-      const py = Math.round(ty(v, gy)) + 0.5;
+      const py = Math.round(Y(v, gy)) + 0.5;
       ctx.strokeStyle = Math.abs(gy) < step / 1e3 ? "#334155" : "#1e293b";
       ctx.beginPath(); ctx.moveTo(0, py); ctx.lineTo(W, py); ctx.stroke();
-      ctx.fillText(+gy.toFixed(4), 4, py - 2);
+      ctx.fillText(String(+gy.toFixed(4)), 4, py - 2);
     }
-    // origin
-    const ox = tx(v, 0), oy = ty(v, 0);
+    const ox = X(v, 0), oy = Y(v, 0);
     ctx.strokeStyle = "#f59e0b"; ctx.lineWidth = 1.5;
     ctx.beginPath(); ctx.moveTo(ox - 8, oy); ctx.lineTo(ox + 8, oy); ctx.moveTo(ox, oy - 8); ctx.lineTo(ox, oy + 8); ctx.stroke();
     ctx.fillStyle = "#f59e0b"; ctx.fillText("(0,0)", ox + 10, oy + 14);
   }
 
-  // progress = jarak kumulatif yang digambar (Infinity = semua)
+  // progress = jarak kumulatif yang digambar (Infinity = seluruh jalur)
   function draw(progress) {
     const W = cv.clientWidth, H = cv.clientHeight;
     ctx.clearRect(0, 0, W, H);
@@ -294,17 +379,29 @@
     if (blank || !model || !model.segs.length) {
       if (!blank) {
         ctx.fillStyle = "#475569"; ctx.font = "14px ui-sans-serif, system-ui"; ctx.textAlign = "center";
-        ctx.fillText("Tidak ada gerakan G0/G1 yang valid", W / 2, H / 2); ctx.textAlign = "left";
+        ctx.fillText("Tidak ada gerakan G0/G1/G2/G3 yang valid", W / 2, H / 2); ctx.textAlign = "left";
       }
       return;
     }
     ctx.lineCap = "round"; ctx.lineJoin = "round";
-    let acc = 0, tool = { x: model.segs[0].x1, y: model.segs[0].y1 };
+    let acc = 0, tool = model.segs[0].pts[0];
     for (const s of model.segs) {
       if (acc >= progress) break;
-      let f = Math.min(1, (progress - acc) / s.len);
-      const ex = s.x1 + (s.x2 - s.x1) * f, ey = s.y1 + (s.y2 - s.y1) * f;
-      ctx.beginPath(); ctx.moveTo(tx(view, s.x1), ty(view, s.y1)); ctx.lineTo(tx(view, ex), ty(view, ey));
+      const upto = Math.min(s.len, progress - acc);
+      ctx.beginPath();
+      ctx.moveTo(X(view, s.pts[0][0]), Y(view, s.pts[0][1]));
+      let end = s.pts[0];
+      for (let i = 1; i < s.pts.length; i++) {
+        const a = s.pts[i - 1], b = s.pts[i];
+        if (s.cum[i] <= upto + 1e-12) {
+          ctx.lineTo(X(view, b[0]), Y(view, b[1])); end = b;
+        } else {
+          const f = (upto - s.cum[i - 1]) / (s.cum[i] - s.cum[i - 1]);
+          end = [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f];
+          ctx.lineTo(X(view, end[0]), Y(view, end[1]));
+          break;
+        }
+      }
       if (s.type === 0) {
         ctx.setLineDash([7, 6]); ctx.strokeStyle = "#64748b"; ctx.lineWidth = 1.5; ctx.shadowBlur = 0;
       } else {
@@ -313,15 +410,13 @@
       }
       ctx.stroke();
       ctx.setLineDash([]); ctx.shadowBlur = 0;
-      tool = { x: ex, y: ey };
+      tool = end;
       acc += s.len;
     }
-    // titik awal
-    const st = model.segs[0];
-    ctx.fillStyle = "#34d399"; ctx.beginPath(); ctx.arc(tx(view, st.x1), ty(view, st.y1), 4.5, 0, 7); ctx.fill();
-    // posisi tool
+    const st = model.segs[0].pts[0];
+    ctx.fillStyle = "#34d399"; ctx.beginPath(); ctx.arc(X(view, st[0]), Y(view, st[1]), 4.5, 0, TWO_PI); ctx.fill();
     ctx.strokeStyle = "#34d399"; ctx.lineWidth = 2; ctx.fillStyle = "rgba(52,211,153,.25)";
-    ctx.beginPath(); ctx.arc(tx(view, tool.x), ty(view, tool.y), 7, 0, 7); ctx.fill(); ctx.stroke();
+    ctx.beginPath(); ctx.arc(X(view, tool[0]), Y(view, tool[1]), 7, 0, TWO_PI); ctx.fill(); ctx.stroke();
   }
 
   /* ---------- ACTIONS ---------- */
@@ -332,7 +427,7 @@
     model = parse(ta.value);
     showStats(model);
     if (!animate || !model.dTotal) { draw(Infinity); return; }
-    const dur = 2500, t0 = performance.now();
+    const dur = 3000, t0 = performance.now();
     const step = now => {
       const p = Math.min(1, (now - t0) / dur);
       draw(p * model.dTotal);
@@ -343,7 +438,7 @@
 
   function reset() {
     stopAnim(); blank = true;
-    model = { segs: [], warns: [], dCut: 0, dRapid: 0, tCut: 0, tRapid: 0, dTotal: 0, tTotal: 0 };
+    model = { segs: [], warns: [], dCut: 0, dRapid: 0, tCut: 0, tRapid: 0, nLine: 0, nArc: 0, dTotal: 0, tTotal: 0 };
     showStats(model); draw(Infinity);
   }
 
